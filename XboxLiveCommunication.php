@@ -1,7 +1,5 @@
 <?php
-  define("COOKIEJAR", "/tmp/xbox_live_cookies");
-  define("AUTHCACHE", "/tmp/auth_info");
-  define("XUIDCACHE", "/tmp/xuid");
+  
   class XboxLiveCommunication {
     var $headers;
     var $username;
@@ -9,52 +7,88 @@
     var $xuid;
     var $authorization_header;
     var $authentication_data;
+    var $ch;
+    var $cookiejar;
+    var $logger;
     
-    public function __construct($username, $password, $force = 0) {
-      $this->username = $username;
-      $this->password = $password;
-      $headers = array();
+    public function __construct() {
+      $headers = $this->clearHeaders();
       $authentication_data = array();
-      if (file_exists(AUTHCACHE) && !$force) {
-        $this->authorization_header = file_get_contents(AUTHCACHE);
-        $this->xuid = file_get_contents(XUIDCACHE);
-      }
-      else {
-        $this->authorize();
-        file_put_contents(AUTHCACHE, $this->authorization_header);
-        file_put_contents(XUIDCACHE, $this->xuid);
-      }
-    
+      
+      $this->logger = new Logger();
+      $this->logger->level = Logger::debug;
+      
+      $this->cookiejar = new CookieJar();
+      
+      // setCookieJar will create the curl handle
+      $this->setCookieJar(); 
+      
     }
     
+    public static function withCachedCredentials($xuid, $authorization_header) {
+      $instance = new self();
+      $instance->xuid = $xuid;
+      $instance->authorization_header = $authorization_header;
+      
+      $instance->setCookieJar($xuid);
+      return $instance;
+    }
+    
+    public static function withUsernameAndPassword($username, $password) {
+      // for the initial connection generate some temp cookie file
+      
+      $instance = new self();
+      $instance->username = $username;
+      $instance->password = $password;
+      $instance->authorize();
+      
+      $instance->setCookieJar($instance->xuid);
+      return $instance;
+    }
+    
+    private function setCookieJar($xuid = null) {
+      // writes out the existing cookiejar file
+      // if there is an existing curl handle
+      if ($this->ch)
+        curl_close($this->ch);
+
+      $this->cookiejar->setCookieJar($xuid);
+        
+      $this->logger->log(sprintf("Setting cookiejar to %s", $this->cookiejar->cookiejar), Logger::debug);
+      
+      $this->ch = curl_init();
+      curl_setopt($this->ch, CURLOPT_COOKIEFILE, $this->cookiejar->cookiejar);
+      curl_setopt($this->ch, CURLOPT_COOKIEJAR, $this->cookiejar->cookiejar);
+    }
+    
+    
+    
     public function request($url, $post_data = null, $use_header = 0) {
-      $ch = curl_init();
-      curl_setopt($ch, CURLOPT_COOKIEFILE, COOKIEJAR);
-      curl_setopt($ch, CURLOPT_COOKIEJAR, COOKIEJAR);
-      curl_setopt($ch, CURLOPT_URL, $url);
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      
+      curl_setopt($this->ch, CURLOPT_URL, $url);
+      curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
       
       $headers = array();
       if (count($this->headers) > 0) {
         foreach($this->headers AS $header_name => $header_value) {
           $headers[] = sprintf("%s: %s", $header_name, $header_value);
         }
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($this->ch, CURLOPT_HTTPHEADER, $headers);
       }
       
       if ($post_data) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+        curl_setopt($this->ch, CURLOPT_POSTFIELDS, $post_data);
         
         if (is_array($post_data)) {
-          curl_setopt($ch, CURLOPT_POST, count($post_data));
+          curl_setopt($this->ch, CURLOPT_POST, count($post_data));
         }
       }
       
-      curl_setopt($ch, CURLOPT_VERBOSE, 0);
-      curl_setopt($ch, CURLOPT_HEADER, $use_header);
+      curl_setopt($this->ch, CURLOPT_VERBOSE, 0);
+      curl_setopt($this->ch, CURLOPT_HEADER, $use_header);
       
-      //printf("Accessing %s\n", $url);
-      $results = curl_exec($ch);
+      $this->logger->log(sprintf("Accessing %s", $url), Logger::debug);
+      $results = curl_exec($this->ch);
       $this->clearHeaders();
       return $results;
     }
@@ -69,7 +103,7 @@
     
     private function fetchPreAuthData() {
       // remove the old cookie file
-      unlink(COOKIEJAR);
+      unlink($this->cookiejar->cookiejar);
       $post_vals = http_build_query(array(
         'client_id' => '0000000048093EE3',
         'redirect_uri' => 'https://login.live.com/oauth20_desktop.srf',
@@ -117,7 +151,6 @@
       preg_match('/Location: (.*)/', $access_token_results, $match);
   
       $location_parsed = parse_url($match[1]);
-      $qs_exploded = explode('&', $location_parsed['fragment']);
       preg_match('/access_token=(.+?)&/', $location_parsed['fragment'], $match);
 
       $access_token = $match[1];
@@ -188,3 +221,47 @@
       return $this->request($url, $json);
     }
   }
+  
+  class CookieJar {
+    public $cookiejar;
+    
+    public function setCookieJar($xuid = null) {
+      if (!$xuid) {
+        $this->cookiejar = CookieJar::generateCookieJarName();
+      }
+      else {
+        $cookiejar = CookieJar::generateCookieJarName($xuid);
+        
+        // if cookiejar is already defined and the new file doesn't exist
+        // then we're tranisitioning from authorization to doing work
+        if ($this->cookiejar && !file_exists($cookiejar))
+          rename($this->cookiejar, $cookiejar);
+        
+        $this->cookiejar = $cookiejar;
+      }
+      
+    }
+    
+    private static function generateCookieJarName($xuid = null) {
+      if ($xuid)
+        return sprintf("%s/xbox_live_cookies_%s", realpath('/tmp'), $xuid);
+      else
+        return tempnam(realpath('/tmp'), 'xbox_live_cookies_');
+    }
+  }
+  
+  class Logger {
+    var $level;
+    
+    const none = 0;
+    const normal = 1;
+    const debug = 2;
+    
+
+    public function log($message, $level) {
+      if (isset($this->level) && $level <= $this->level) {
+        printf("%s\n", $message);
+      }
+    }
+  }
+  
