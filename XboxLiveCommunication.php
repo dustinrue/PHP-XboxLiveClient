@@ -17,7 +17,7 @@
       $authentication_data = array();
       
       $this->logger = new Logger();
-      $this->logger->level = Logger::debug;
+      $this->logger->level = Logger::error;
       
       $this->cookiejar = new CookieJar();
       
@@ -122,8 +122,18 @@
       
       $match = array();
       preg_match("/urlPost:'([A-Za-z0-9:\?_\-\.&\/=]+)/", $preAuthData, $match);
+      
+      if (!array_key_exists(1, $match)) {
+        $this->logger->log("Unable to fetch pre auth data because urlPost wasn't found", Logger::debug);
+        throw new Exception("Unable to fetch pre auth data, urlPost not found");
+      }
       $urlPost = $match[1];
       $ppft_re = preg_match("/sFTTag:'.*value=\"(.*)\"\/>'/", $preAuthData, $match);
+      
+      if (!array_key_exists(1, $match)) {
+        $this->logger->log("Unable to fetch pre auth data because sFFTag wasn't found", Logger::debug);
+        throw new Exception("Unable to fetch pre auth data, sFFTag not found");
+      }
       $ppft_re = $match[1];
       
       $this->authentication_data['urlPost'] = $urlPost;
@@ -153,10 +163,20 @@
       
       $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, true);
       preg_match('/Location: (.*)/', $access_token_results, $match);
+      
+      if (!array_key_exists(1, $match)) {
+        $this->logger->log("Unable to fetch initial token because Location wasn't found", Logger::debug);
+        throw new Exception("Unable to fetch initial token, Location not found");
+      }
   
       $location_parsed = parse_url($match[1]);
       preg_match('/access_token=(.+?)&/', $location_parsed['fragment'], $match);
 
+      if (!array_key_exists(1, $match)) {
+        $this->logger->log("Unable to fetch initial token because access_token wasn't found", Logger::debug);
+        throw new Exception("Unable to fetch initial token, access token not found");
+      }
+      
       $access_token = $match[1];
       
       $this->authentication_data['access_token'] = $access_token;
@@ -182,6 +202,12 @@
       $this->setHeader('Content-Length', strlen($json_payload));
       
       $authentication_results = $this->request($url, $json_payload);
+      
+      if (empty($authentication_results)) {  
+        $this->logger->log("Unable to authenticate, no data returned", Logger::debug);
+        throw new Exception("Unable to authenticate, no data returned");
+      }
+      
       $user_data = json_decode($authentication_results);
 
       $this->authentication_data['token'] = $user_data->Token;
@@ -208,11 +234,19 @@
       
       $authorization_data = json_decode($this->request($url, $json_payload));
 
+      if (empty($authorization_data)) {  
+        $this->logger->log("Unable to authorize, no data returned", Logger::debug);
+        throw new Exception("Unable to authorize, no data returned");
+      }
+      
       $this->xuid = $authorization_data->DisplayClaims->xui[0]->xid;
       $this->authorization_header = sprintf('XBL3.0 x=%s;%s', $this->authentication_data['uhs'], $authorization_data->Token);
     }
     
     public function fetchData($url, $json = null) {
+      if (empty($this->authorization_header)) {
+        throw new Exception("Not authorized");
+      }
       $this->setHeader('Authorization', $this->authorization_header);
       $this->setHeader('Content-Type', 'application/json');
       $this->setHeader('Accept', 'application/json');
@@ -260,7 +294,7 @@
     var $level;
     
     const none = 0;
-    const normal = 1;
+    const error = 1;
     const debug = 2;
     
 
