@@ -10,6 +10,7 @@
     var $ch;
     var $cookiejar;
     var $logger;
+    var $sha1;
     
     public function __construct() {
       $headers = $this->clearHeaders();
@@ -30,7 +31,8 @@
       $instance->xuid = $xuid;
       $instance->authorization_header = $authorization_header;
       
-      $instance->setCookieJar($xuid);
+      $instance->sha1 = sha1(sprintf("%s%s", $instance->xuid, $instance->authorization_header));
+      $instance->setCookieJar($instance->sha1);
       return $instance;
     }
     
@@ -42,7 +44,8 @@
       $instance->password = $password;
       $instance->authorize();
       
-      $instance->setCookieJar($instance->xuid);
+      $instance->sha1 = sha1(sprintf("%s%s", $instance->xuid, $instance->authorization_header));
+      $instance->setCookieJar($instance->sha1);
       return $instance;
     }
     
@@ -105,6 +108,7 @@
       // remove the old cookie file
       unlink($this->cookiejar->cookiejar);
       $post_vals = http_build_query(array(
+        // don't change this client_id unless you know what you're doing
         'client_id' => '0000000048093EE3',
         'redirect_uri' => 'https://login.live.com/oauth20_desktop.srf',
         'response_type' => 'token',
@@ -225,26 +229,28 @@
   class CookieJar {
     public $cookiejar;
     
-    public function setCookieJar($xuid = null) {
-      if (!$xuid) {
+    public function setCookieJar($id = null) {
+      if (!$id) {
         $this->cookiejar = CookieJar::generateCookieJarName();
       }
       else {
-        $cookiejar = CookieJar::generateCookieJarName($xuid);
+        $cookiejar = CookieJar::generateCookieJarName($id);
         
         // if cookiejar is already defined and the new file doesn't exist
         // then we're tranisitioning from authorization to doing work
         if ($this->cookiejar && !file_exists($cookiejar))
           rename($this->cookiejar, $cookiejar);
+        else
+          unlink($this->cookiejar);
         
         $this->cookiejar = $cookiejar;
       }
       
     }
     
-    private static function generateCookieJarName($xuid = null) {
-      if ($xuid)
-        return sprintf("%s/xbox_live_cookies_%s", realpath('/tmp'), $xuid);
+    private static function generateCookieJarName($id = null) {
+      if ($id)
+        return sprintf("%s/xbox_live_cookies_%s", realpath('/tmp'), $id);
       else
         return tempnam(realpath('/tmp'), 'xbox_live_cookies_');
     }
