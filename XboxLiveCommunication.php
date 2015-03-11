@@ -11,13 +11,14 @@
     var $cookiejar;
     var $logger;
     var $sha1;
+    var $authorization_expires;
     
     public function __construct() {
       $headers = $this->clearHeaders();
       $authentication_data = array();
       
       $this->logger = new Logger();
-      $this->logger->level = Logger::error;
+      $this->logger->level = Logger::debug;
       
       $this->cookiejar = new CookieJar();
       
@@ -26,6 +27,12 @@
       
     }
     
+    /**
+     * 
+     * @param type $xuid
+     * @param type $authorization_header
+     * @return \XboxLiveCommunication
+     */
     public static function withCachedCredentials($xuid, $authorization_header) {
       $instance = new self();
       $instance->xuid = $xuid;
@@ -36,6 +43,12 @@
       return $instance;
     }
     
+    /**
+     * 
+     * @param type $username
+     * @param type $password
+     * @return \XboxLiveCommunication
+     */
     public static function withUsernameAndPassword($username, $password) {
       // for the initial connection generate some temp cookie file
       
@@ -49,7 +62,7 @@
       return $instance;
     }
     
-    private function setCookieJar($xuid = null) {
+    protected function setCookieJar($xuid = null) {
       // writes out the existing cookiejar file
       // if there is an existing curl handle
       if ($this->ch)
@@ -120,6 +133,7 @@
       
       $preAuthData = $this->request(sprintf("https://login.live.com/oauth20_authorize.srf?%s", $post_vals), null, 1);
       
+      $this->logger->log($preAuthData, Logger::debug);
       $match = array();
       preg_match("/urlPost:'([A-Za-z0-9:\?_\-\.&\/=]+)/", $preAuthData, $match);
       
@@ -162,6 +176,7 @@
       ));
       
       $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, true);
+      $this->logger->log($access_token_results, Logger::debug);
       preg_match('/Location: (.*)/', $access_token_results, $match);
       
       if (!array_key_exists(1, $match)) {
@@ -201,6 +216,11 @@
       $this->setHeader('Content-Type', 'application/json');
       $this->setHeader('Content-Length', strlen($json_payload));
       
+      if ($this->logger->level == Logger::debug) {
+        $authentication_results = $this->request($url, $json_payload, 1);
+        $this->logger->log($authentication_results, Logger::debug);
+        
+      }
       $authentication_results = $this->request($url, $json_payload);
       
       if (empty($authentication_results)) {  
@@ -214,7 +234,7 @@
       $this->authentication_data['uhs'] = $user_data->DisplayClaims->xui[0]->uhs;
     }
     
-    private function authorize() {
+    protected function authorize() {
       $this->authenticate();
       
       $url = 'https://xsts.auth.xboxlive.com/xsts/authorize';
@@ -232,6 +252,11 @@
       $this->setHeader('Content-Type', 'application/json');
       $this->setHeader('Content-Length', strlen($json_payload));
       
+      if ($this->logger->level == Logger::debug) {
+        $authentication_results = $this->request($url, $json_payload, 1);
+        $this->logger->log($authentication_results, Logger::debug);
+      }
+      
       $authorization_data = json_decode($this->request($url, $json_payload));
 
       if (empty($authorization_data)) {  
@@ -241,6 +266,7 @@
       
       $this->xuid = $authorization_data->DisplayClaims->xui[0]->xid;
       $this->authorization_header = sprintf('XBL3.0 x=%s;%s', $this->authentication_data['uhs'], $authorization_data->Token);
+      $this->authorization_expires = $authorization_data->NotAfter;
     }
     
     public function fetchData($url, $json = null) {
@@ -257,6 +283,16 @@
       }
       
       return $this->request($url, $json);
+    }
+    
+    public function buildParameterString($params = array()) {
+      
+      $output = "";
+      foreach($params AS $key => $value) {
+        $output .= sprintf("%s=%s&", $key, $value);
+      }
+
+      return substr($output, 0, strlen($output) - 1);
     }
   }
   
