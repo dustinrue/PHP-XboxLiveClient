@@ -18,7 +18,7 @@
       $authentication_data = array();
       
       $this->logger = new Logger();
-      $this->logger->level = Logger::debug;
+      $this->logger->level = Logger::error;
       
       $this->cookiejar = new CookieJar();
       
@@ -294,7 +294,13 @@
 
       return substr($output, 0, strlen($output) - 1);
     }
+    
+    public function sendData($url, $json) {
+      print_r($this->fetchData($url, $json));
+    }
   }
+  
+  
   
   class CookieJar {
     public $cookiejar;

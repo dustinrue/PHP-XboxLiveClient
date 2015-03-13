@@ -165,5 +165,22 @@
       return $this->request($url, $json_payload);
     }
     
+    public function sendMessage($xuids, $message) {
+      $url = sprintf("https://msg.xboxlive.com/users/xuid(%s)/outbox", $this->xuid);
+ 
+      foreach($xuids AS $xuid) {
+        $recipients[]['xuid'] = $xuid;
+      }
+      $json_payload = json_encode(array(
+        'header' => array(
+          'recipients' => $recipients,
+        ),
+        'messageText' => $message,
+      ));
+      
+      $this->setHeader('x-xbl-contract-version', '3');
+      $this->sendData($url, $json_payload);
+    }
+    
    
   }
