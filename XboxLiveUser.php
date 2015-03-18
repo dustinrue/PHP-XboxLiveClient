@@ -72,7 +72,7 @@
     public function fetchUserAchievements(&$params = array()) {
       if (count($params) == 0) {
         $params = array(
-          'orderBy' => 'EndingSoon',
+          'orderBy' => 'unlockTime',
           'maxItems' => '600',
         );
       }      
@@ -135,13 +135,13 @@
     public function fetchUserScreenshots($params = array()) {
       if (count($params) == 0) {
         $params = array(
-          'maxItems=24',
+          'maxItems' => '24',
         );
       }
       $param_string = $this->buildParameterString($params);
       
       $url = sprintf('https://screenshotsmetadata.xboxlive.com/users/xuid(%s)/screenshots?%s', $this->xuid, $param_string);
-      return $this->request($url);
+      return $this->fetchData($url);
     }
     
     private function batchFetchUserDetailsWithXuids($user_list) {
@@ -182,5 +182,28 @@
       $this->sendData($url, $json_payload);
     }
     
-   
+    public function fetchActivity() {
+      // possible contentTypes include
+      //   * Game
+      //   * App
+    }
+    
+    public function fetchOwnedGamesAndApps() {
+      $url = sprintf("https://eplists.xboxlive.com/users/xuid(%s)/lists/RECN/MultipleLists?listNames=GamesRecents,AppsRecents&filterDeviceType=XboxOne", $this->xuid);
+      
+      return $this->fetchData($url);
+    }
+    
+    public function fetchPlayedGamesAndApps() {
+      $url = sprintf("https://avty.xboxlive.com/users/xuid(%s)/activity/History?contentTypes=Game&activityTypes=Played&numItems=10&platform=XboxOne", $this->xuid);
+      
+      return $this->fetchData($url);
+    }
+    public function test() {
+      $url = sprintf("https://avty.xboxlive.com/users/xuid(%s)/activity/People/People/Summary/Title?contentTypes=App&activityTypes=Played&numItems=50&platform=XboxOne&includeSelf=false&startDate=2015-03-13+17-03-02", $this->xuid);
+      $url = "https://achievements.xboxlive.com/users/xuid(2535455857670853)/history/titles?skipItems=0&maxItems=15&orderBy=unlockTime";
+      //$url = "https://achievements.xboxlive.com/users/xuid(2535455857670853)/history/titles?skipItems=0&maxItems=25&titleId=247546985&orderBy=unlockTime";
+      
+      return $this->fetchData($url);
+    }
   }

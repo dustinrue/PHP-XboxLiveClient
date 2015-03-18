@@ -132,7 +132,7 @@
       $post_vals = urldecode($post_vals);
       
       $preAuthData = $this->request(sprintf("https://login.live.com/oauth20_authorize.srf?%s", $post_vals), null, 1);
-      
+
       $this->logger->log($preAuthData, Logger::debug);
       $match = array();
       preg_match("/urlPost:'([A-Za-z0-9:\?_\-\.&\/=]+)/", $preAuthData, $match);
@@ -174,8 +174,9 @@
         'i17' => '0',
         'i18' => '__Login_Host|1',
       ));
-      
+
       $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, true);
+      exit;
       $this->logger->log($access_token_results, Logger::debug);
       preg_match('/Location: (.*)/', $access_token_results, $match);
       

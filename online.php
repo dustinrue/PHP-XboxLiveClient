@@ -30,8 +30,7 @@
   $users_followed = json_decode($live->fetchFollowedUsers());
   
   $user_list = array();
-  print_r($users_followed);
-  exit;
+
   foreach($users_followed->people AS $user) {
     $user_list[] = $user->xuid;
   }
