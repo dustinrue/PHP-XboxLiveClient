@@ -176,7 +176,6 @@
       ));
 
       $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, true);
-      exit;
       $this->logger->log($access_token_results, Logger::debug);
       preg_match('/Location: (.*)/', $access_token_results, $match);
       
