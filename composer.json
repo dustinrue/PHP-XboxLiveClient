@@ -5,12 +5,12 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "Dustin",
+            "name": "Dustin"
         }
     ],
     "require": {
         "php": ">=5.2.1",
         "ext-curl": "*",
-        "ext-openssl": "*",
+        "ext-openssl": "*"
     },
 }
