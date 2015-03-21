@@ -38,6 +38,8 @@
   } while ($continue);
   
 
+  print_r($screenshot_data);
+  exit;
   printf("<html>");
   foreach($screenshot_data AS $screenshot) {
     $uri_meta = parse_url($screenshot->screenshotUris[0]->uri);

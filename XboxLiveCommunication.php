@@ -11,7 +11,10 @@
     var $cookiejar;
     var $logger;
     var $sha1;
+    var $authentication_expires;
     var $authorization_expires;
+    var $authentication_token;
+    var $authorization_token;
     
     public function __construct() {
       $headers = $this->clearHeaders();
@@ -174,8 +177,7 @@
         'i17' => '0',
         'i18' => '__Login_Host|1',
       ));
-
-      $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, true);
+      $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, 1);
       $this->logger->log($access_token_results, Logger::debug);
       preg_match('/Location: (.*)/', $access_token_results, $match);
       
@@ -231,6 +233,8 @@
       $user_data = json_decode($authentication_results);
 
       $this->authentication_data['token'] = $user_data->Token;
+      $this->authentication_token = $user_data->Token;
+      $this->authentication_expires = $user_data->NotAfter;
       $this->authentication_data['uhs'] = $user_data->DisplayClaims->xui[0]->uhs;
     }
     

@@ -1,0 +1,16 @@
+{
+    "name": "dustinrue/php-xboxliveclient",
+    "type": "library",
+    "description": "The PHP-XboxLiveClient",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Dustin",
+        }
+    ],
+    "require": {
+        "php": ">=5.2.1",
+        "ext-curl": "*",
+        "ext-openssl": "*",
+    },
+}
