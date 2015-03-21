@@ -102,13 +102,31 @@
           curl_setopt($this->ch, CURLOPT_POST, count($post_data));
         }
       }
+      else {
+        // we might be stuck in a post type request, switch back to get
+        curl_setopt($this->ch, CURLOPT_POST, 0);
+        curl_setopt($this->ch, CURLOPT_POSTFIELDS, null);
+        curl_setopt($this->ch, CURLOPT_CUSTOMREQUEST, 'GET');
+      }
       
       curl_setopt($this->ch, CURLOPT_VERBOSE, 0);
       curl_setopt($this->ch, CURLOPT_HEADER, $use_header);
       
       $this->logger->log(sprintf("Accessing %s", $url), Logger::debug);
+      if ($this->logger->level == Logger::debug) {
+        foreach($headers AS $header) {
+          $this->logger->log(sprintf("    %s", $header), Logger::debug);
+        }
+        $this->logger->log(sprintf(" \n\n"), Logger::debug);
+      }
       $results = curl_exec($this->ch);
+      
+      if ($this->logger->level == Logger::debug) {
+        curl_setopt($this->ch, CURLOPT_HEADER, 1);
+        printf("%s\n\n", curl_exec($this->ch));
+      }
       $this->clearHeaders();
+      $this->setCookieJar($this->xuid);
       return $results;
     }
     

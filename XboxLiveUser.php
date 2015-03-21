@@ -64,6 +64,14 @@
       return ($user_data) ? $user_data->profileUsers[0]->id:null;
     }
     
+    public function fetchGamertagForXuid($xuid = null) {
+      if (!$xuid) 
+        $xuid = $this->xuid;
+      
+      $user_data = json_decode($this->fetchUserDetails(array($xuid)));
+      return ($user_data) ? $user_data->profileUsers[0]->settings[0]->value:null;
+    }
+    
     /**
      * 
      * @param array $params
@@ -107,7 +115,7 @@
     public function fetchGameDVRClips(&$params) {
       if (count($params) == 0) {
         $params = array(
-          'maxItems=24',
+          'maxItems' => '24',
         );
       }
       $param_string = $this->buildParameterString($params);
@@ -162,7 +170,7 @@
         'userIds' => $user_list,
       ));
       
-      return $this->request($url, $json_payload);
+      return $this->fetchData($url, $json_payload);
     }
     
     public function sendMessage($xuids, $message) {
@@ -206,4 +214,15 @@
       
       return $this->fetchData($url);
     }
+    
+    /* 
+     * Convert settings array to associative array
+     * 
+     * $user_detail_lookup = array();
+  foreach($raw_user_details->profileUsers AS $current_user) {
+    foreach($current_user->settings AS $value) {
+      $user_detail_lookup[$current_user->id][$value->id] = $value->value;
+    }
+  }
+     */
   }
