@@ -4,7 +4,7 @@
   define("XUIDCACHE", "/tmp/xuid");
   define("EXPIRES", "/tmp/session_expires");
   
-  require_once 'XboxLiveUser.php';
+  require_once 'XboxLiveClient.php';
   
   $shortopts = "";
   $shortopts .= "u:";
@@ -21,7 +21,7 @@
   }
   
   try {
-    $live = XboxLiveUser::withUsernameAndPassword($username, $password);
+    $live = XboxLiveClient::withUsernameAndPassword($username, $password);
   }
   catch (Exception $e) {
     printf("Couldn't go with u/p with message '%s'\n", $e->getMessage());

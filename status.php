@@ -4,7 +4,7 @@
   define("XUIDCACHE", "/tmp/xuid");
   define("EXPIRES", "/tmp/session_expires");
   
-  require_once 'XboxLiveUser.php';
+  require_once 'XboxLiveClient.php';
   
 
 
@@ -13,7 +13,7 @@
     $authorization_header = file_get_contents(AUTHCACHE);
     
     try {
-      $live = XboxLiveUser::withCachedCredentials($xuid, $authorization_header);
+      $live = XboxLiveClient::withCachedCredentials($xuid, $authorization_header);
     }
     catch (Exception $e) {
       printf("Couldn't go with cached creds with message '%s'\n", $e->getMessage());
@@ -37,8 +37,11 @@
   
   $doc = $live->fetchXuidForGamertag($options['g']);
   $users[] = $doc;
-  $doc_presence = json_decode($live->fetchUserPresence($users));
+  $raw = $live->fetchUserPresence($users);
+  echo $raw;
+  $doc_presence = json_decode($raw);
   
+  print_r($doc_presence);
   $state = $doc_presence[0]->state;
   
 

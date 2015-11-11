@@ -1,4 +1,9 @@
 <?php
+
+  if (defined('DRUPAL_ROOT'))
+    require_once __DIR__ . '/vendor/autoload.php';
+  else
+    require_once 'vendor/autoload.php';
   
   class XboxLiveCommunication {
     var $headers;
@@ -15,6 +20,11 @@
     var $authorization_expires;
     var $authentication_token;
     var $authorization_token;
+    var $batch;
+    var $batch_items;
+    var $url; //last url created
+    var $no_cookie_jar;
+    static $requests;
     
     public function __construct() {
       $headers = $this->clearHeaders();
@@ -52,13 +62,13 @@
      * @param type $password
      * @return \XboxLiveCommunication
      */
-    public static function withUsernameAndPassword($username, $password) {
+    public static function withUsernameAndPassword($username, $password, $authentication_data = null) {
       // for the initial connection generate some temp cookie file
       
       $instance = new self();
       $instance->username = $username;
       $instance->password = $password;
-      $instance->authorize();
+      $instance->authorize($authentication_data);
       
       $instance->sha1 = sha1(sprintf("%s%s", $instance->xuid, $instance->authorization_header));
       $instance->setCookieJar($instance->sha1);
@@ -68,31 +78,44 @@
     protected function setCookieJar($xuid = null) {
       // writes out the existing cookiejar file
       // if there is an existing curl handle
-      if ($this->ch)
+      if ($this->ch) {
         curl_close($this->ch);
+        $this->ch = null;
+      }
 
       $this->cookiejar->setCookieJar($xuid);
         
       $this->logger->log(sprintf("Setting cookiejar to %s", $this->cookiejar->cookiejar), Logger::debug);
       
-      $this->ch = curl_init();
-      curl_setopt($this->ch, CURLOPT_COOKIEFILE, $this->cookiejar->cookiejar);
-      curl_setopt($this->ch, CURLOPT_COOKIEJAR, $this->cookiejar->cookiejar);
+      
     }
     
     
     
     public function request($url, $post_data = null, $use_header = 0) {
+      if ($this->ch)
+        $this->logger->log("Curl handle exists and it's getting overwritten", Logger::debug);
       
+      
+      $this->ch = curl_init();
+      
+      if (!$this->no_cookie_jar) {
+        curl_setopt($this->ch, CURLOPT_COOKIEFILE, $this->cookiejar->cookiejar);
+        curl_setopt($this->ch, CURLOPT_COOKIEJAR, $this->cookiejar->cookiejar);
+      }
       curl_setopt($this->ch, CURLOPT_URL, $url);
       curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
-      
+      curl_setopt($this->ch, CURLOPT_TIMEOUT, 400);
       $headers = array();
       if (count($this->headers) > 0) {
         foreach($this->headers AS $header_name => $header_value) {
+          $this->logger->log(sprintf("Adding header: %s", $header_name), Logger::debug_with_headers);
           $headers[] = sprintf("%s: %s", $header_name, $header_value);
         }
         curl_setopt($this->ch, CURLOPT_HTTPHEADER, $headers);
+      }
+      else {
+        $this->logger->log("No headers to set", Logger::debug_with_headers);
       }
       
       if ($post_data) {
@@ -102,32 +125,157 @@
           curl_setopt($this->ch, CURLOPT_POST, count($post_data));
         }
       }
-      else {
-        // we might be stuck in a post type request, switch back to get
-        curl_setopt($this->ch, CURLOPT_POST, 0);
-        curl_setopt($this->ch, CURLOPT_POSTFIELDS, null);
-        curl_setopt($this->ch, CURLOPT_CUSTOMREQUEST, 'GET');
-      }
       
       curl_setopt($this->ch, CURLOPT_VERBOSE, 0);
       curl_setopt($this->ch, CURLOPT_HEADER, $use_header);
       
       $this->logger->log(sprintf("Accessing %s", $url), Logger::debug);
-      if ($this->logger->level == Logger::debug) {
+      if ($this->logger->level == Logger::debug_with_headers) {
         foreach($headers AS $header) {
-          $this->logger->log(sprintf("    %s", $header), Logger::debug);
+          $this->logger->log(sprintf("    %s", $header), Logger::debug_with_headers);
         }
-        $this->logger->log(sprintf(" \n\n"), Logger::debug);
+        $this->logger->log(sprintf("    %s", $post_data));
+        $this->logger->log(sprintf(" \n\n"), Logger::debug_with_headers);
       }
-      $results = curl_exec($this->ch);
+      $time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;$time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;
       
-      if ($this->logger->level == Logger::debug) {
+      if ($this->batch) {
+        // add to a batch list
+        $request = new stdClass();
+        $request->xlcObject = clone $this;
+        $request->url = $url;
+        $request->post_data = $post_data;
+        $this->batch_items[] = clone $request;
+        unset($request);
+        $this->url = $url;
+        return;
+      }
+      else {
+        // perform the request now
+        $results = curl_exec($this->ch);
+      }
+      
+      
+      $time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $finish = $time;
+      $total_time = round(($finish - $start), 3);
+      
+      $request = array(
+        'request_string' => $url,
+        'time_taken' => $total_time,
+      );
+      XboxLiveCommunication::$requests[] = $request;
+      syslog(LOG_ERR, sprintf("Accessing: '%s' took %ss", $url, $total_time));
+      //dpm(sprintf("Accessing: '%s' took %ss", $url, $total_time));
+      
+      if ($this->logger->level == Logger::debug_with_headers) {
         curl_setopt($this->ch, CURLOPT_HEADER, 1);
         printf("%s\n\n", curl_exec($this->ch));
       }
       $this->clearHeaders();
-      $this->setCookieJar($this->xuid);
+      
+      if (curl_errno($this->ch) > 0) {
+        throw new Exception("Unknown error while communicating with Xbox Live. Xbox Live is taking too long to repond or is currently down");
+      }
+      //curl_close($this->ch);  
       return $results;
+    }
+    
+    public function performBatch() {
+      $client = new GuzzleHttp\Client(array(), array(
+        'curl.options' => array(
+          'CURLOPT_COOKIEJAR' => $this->cookiejar->cookiejar,
+          'CURLOPT_COOKIEFILE' => $this->cookiejar->cookiejar,
+        ),
+      
+      ));
+      $time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;$time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;
+      // does the batch operations
+      $responses = array();
+      $requests = array();
+      syslog(LOG_ERR, sprintf("Accessing: starting batch"));
+      foreach($this->batch_items AS $xlc) {
+        $headers = $xlc->xlcObject->headers;
+        $url = $xlc->url;
+        $post_data = $xlc->post_data;
+        
+        
+        
+        if ($post_data) {
+          syslog(LOG_ERR, sprintf("Accessing: adding post '%s' to batch", $url));
+
+          $req = $client->createRequest('POST', $url, 
+            array(
+              'future' => false,
+              'debug' => false,
+              'body' => $post_data,
+            ) 
+            );
+          
+          
+        }
+        else {
+          syslog(LOG_ERR, sprintf("Accessing: adding get '%s' to batch", $url));
+          $req = $client->createRequest('GET', $url, 
+            array(
+              'future' => false,
+              'debug' => false,
+            ));
+          
+        }
+        
+        foreach($headers AS $header => $value) {
+          $req->setHeader($header, $value);
+        }
+        
+        
+        $requests[] = $req;
+        
+      }
+      $time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;$time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $start = $time;
+      
+      $results = \GuzzleHttp\Pool::batch($client, $requests);
+     
+      
+      $time = microtime();
+      $time = explode(' ', $time);
+      $time = $time[1] + $time[0];
+      $finish = $time;
+      $total_time = round(($finish - $start), 3);
+      syslog(LOG_ERR, sprintf("Accessing (batch of %s) took %ss", count($requests), $total_time));
+      //dpm(sprintf("Accessing (batch) took %ss", $total_time));
+      foreach ($results->getSuccessful() as $response) {
+        
+        $responses[] = array(
+          'body' => $response->getBody(),
+          'request' => $response->getEffectiveUrl(),
+        );
+      }
+      
+      foreach($results->getFailures() AS $failures) {
+      }
+      unset($this->batch_items);
+      return $responses;
     }
     
     public function setHeader($header_name, $header_value) {
@@ -154,7 +302,7 @@
       
       $preAuthData = $this->request(sprintf("https://login.live.com/oauth20_authorize.srf?%s", $post_vals), null, 1);
 
-      $this->logger->log($preAuthData, Logger::debug);
+      $this->logger->log($preAuthData, Logger::debug_with_headers);
       $match = array();
       preg_match("/urlPost:'([A-Za-z0-9:\?_\-\.&\/=]+)/", $preAuthData, $match);
       
@@ -177,7 +325,7 @@
     
     private function fetchInitialAccessToken() {
       $this->fetchPreAuthData();
- 
+   
       $post_vals = http_build_query(array(
         'login' => $this->username,
         'passwd' => $this->password,
@@ -196,9 +344,8 @@
         'i18' => '__Login_Host|1',
       ));
       $access_token_results = $this->request($this->authentication_data['urlPost'], $post_vals, 1);
-      $this->logger->log($access_token_results, Logger::debug);
+      $this->logger->log($access_token_results, Logger::debug_with_headers);
       preg_match('/Location: (.*)/', $access_token_results, $match);
-      
       if (!array_key_exists(1, $match)) {
         $this->logger->log("Unable to fetch initial token because Location wasn't found", Logger::debug);
         throw new Exception("Unable to fetch initial token, Location not found");
@@ -213,12 +360,18 @@
       }
       
       $access_token = $match[1];
-      
+     
       $this->authentication_data['access_token'] = $access_token;
     }
     
-    private function authenticate() {
-      $this->fetchInitialAccessToken();
+    public function authenticate($access_token = null) {
+      
+      if (!$access_token) {
+        $this->fetchInitialAccessToken();
+      }
+      else {
+        $this->authentication_data['access_token'] = $access_token;
+      }
       
       $url = 'https://user.auth.xboxlive.com/user/authenticate';
   
@@ -236,11 +389,15 @@
       $this->setHeader('Content-Type', 'application/json');
       $this->setHeader('Content-Length', strlen($json_payload));
       
-      if ($this->logger->level == Logger::debug) {
+      if ($this->logger->level == Logger::debug_with_headers) {
         $authentication_results = $this->request($url, $json_payload, 1);
-        $this->logger->log($authentication_results, Logger::debug);
         
+        $this->logger->log($authentication_results, Logger::debug);
+        $this->setHeader('Content-Type', 'application/json');
+        $this->setHeader('Content-Length', strlen($json_payload));
       }
+      
+      
       $authentication_results = $this->request($url, $json_payload);
       
       if (empty($authentication_results)) {  
@@ -256,8 +413,13 @@
       $this->authentication_data['uhs'] = $user_data->DisplayClaims->xui[0]->uhs;
     }
     
-    protected function authorize() {
-      $this->authenticate();
+    public function authorize($authentication_data = null) {
+      if ($authentication_data) {
+        $this->authentication_data = $authentication_data;
+      }
+      else {
+        $this->authenticate();
+      }
       
       $url = 'https://xsts.auth.xboxlive.com/xsts/authorize';
 
@@ -274,9 +436,11 @@
       $this->setHeader('Content-Type', 'application/json');
       $this->setHeader('Content-Length', strlen($json_payload));
       
-      if ($this->logger->level == Logger::debug) {
+      if ($this->logger->level == Logger::debug_with_headers) {
         $authentication_results = $this->request($url, $json_payload, 1);
         $this->logger->log($authentication_results, Logger::debug);
+        $this->setHeader('Content-Type', 'application/json');
+        $this->setHeader('Content-Length', strlen($json_payload));
       }
       
       $authorization_data = json_decode($this->request($url, $json_payload));
@@ -296,9 +460,17 @@
         throw new Exception("Not authorized");
       }
       $this->setHeader('Authorization', $this->authorization_header);
-      $this->setHeader('Content-Type', 'application/json');
+      
+      if ($json)
+        $this->setHeader('Content-Type', 'application/json');
+      
       $this->setHeader('Accept', 'application/json');
-      $this->setHeader('x-xbl-contract-version', '2');
+      
+      if (!array_key_exists('x-xbl-contract-version', $this->headers))
+        $this->setHeader('x-xbl-contract-version', '2');
+      
+      if (!array_key_exists('User-Agent', $this->headers))
+        $this->setHeader('User-Agent', 'XboxRecord.Us Like SmartGlass/2.105.0415 CFNetwork/711.3.18 Darwin/14.0.0');
       
       if ($json) {
         $this->setHeader('Content-Length', strlen($json));
@@ -319,6 +491,14 @@
     
     public function sendData($url, $json) {
       print_r($this->fetchData($url, $json));
+    }
+    
+    public function requestLog() {
+      return $this->requests;
+    }
+    
+    public function batch($is_batch = 0) {
+      $this->batch = $is_batch;
     }
   }
   
@@ -360,11 +540,13 @@
     const none = 0;
     const error = 1;
     const debug = 2;
+    const debug_with_headers = 3;
     
 
     public function log($message, $level) {
       if (isset($this->level) && $level <= $this->level) {
         printf("%s\n", $message);
+        syslog(LOG_ERR, "DERP" . $message);
       }
     }
   }
